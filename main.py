@@ -1,52 +1,49 @@
-def handle_mention(event):
-    print(f"=== HANDLE MENTION CALLED ===")
-    print(f"Full event: {event}")
-    
-    channel = event['channel']
-    text = event.get('text', '')
-    ts = event.get('ts')
-    
-    print(f"Channel: {channel}")
-    print(f"Text: {text}")
-    print(f"Bot ID: {bot_id}")
-    
-    # Extraire le texte après la mention du bot
-    bot_id = '<@U092216TFKQ>'  # Your bot ID is correct!
-    if bot_id in text:
-        print("Bot ID found in text!")
-        # Enlever la mention du bot pour garder que l'avis
-        review_text = text.replace(bot_id, '').strip()
-        print(f"Review text: {review_text}")
+import os
+from flask import Flask, request, jsonify
+import requests
+import anthropic
+import re
+import traceback  # Add this import
+
+app = Flask(__name__)
+
+# Configuration
+SLACK_BOT_TOKEN = os.environ.get('SLACK_BOT_TOKEN')
+ANTHROPIC_API_KEY = os.environ.get('ANTHROPIC_API_KEY')
+
+# Add error checking
+if not SLACK_BOT_TOKEN:
+    print("ERROR: SLACK_BOT_TOKEN not found!")
+if not ANTHROPIC_API_KEY:
+    print("ERROR: ANTHROPIC_API_KEY not found!")
+
+try:
+    client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+    print("Anthropic client initialized successfully")
+except Exception as e:
+    print(f"ERROR initializing Anthropic client: {e}")
+    client = None
+
+@app.route('/')
+def home():
+    return "Bot is running!"
+
+@app.route('/slack/events', methods=['POST'])
+def slack_events():
+    try:
+        print(f"Received request: {request.json}")  
         
-        if review_text:
-            # Générer la réponse
-            try:
-                print("Calling Claude API...")
-                message = client.messages.create(
-                    model="claude-3-haiku-20240307",
-                    max_tokens=200,
-                    temperature=0.7,
-                    system="""Tu es Dominique de ZEDE Paris. 
-                        Réponds aux avis Trustpilot de manière personnalisée:
-                        - Le nom du client est sur la première ligne
-                        - Mentionne les détails spécifiques du produit
-                        - 3-4 lignes maximum
-                        - Signe 'Dominique - ZEDE Paris'
-                        IMPORTANT: Utilise EXACTEMENT le nom et les détails fournis dans l'avis.""",
-                    messages=[
-                        {"role": "user", "content": f"Réponds à cet avis:\n\n{review_text}"}
-                    ]
-                )
-                
-                print("Claude response received!")
-                response_text = message.content[0].text
-                print(f"Response: {response_text}")
-                
-                # Poster la réponse
-                post_message(channel, response_text, ts)
-                
-            except Exception as e:
-                print(f"ERROR calling Claude: {str(e)}")
-                import traceback
-                traceback.print_exc()
-                post_message(channel, f"Erreur: {str(e)}", ts)
+        if 'challenge' in request.json:
+            return jsonify({'challenge': request.json['challenge']})
+        
+        event = request.json.get('event', {})
+        print(f"Event type: {event.get('type')}")
+        
+        if event.get('type') == 'app_mention':
+            handle_mention(event)
+        
+        return '', 200
+    except Exception as e:
+        print(f"ERROR in slack_events: {str(e)}")
+        traceback.print_exc()
+        return '', 200  # Return 200 even on error to prevent Slack retries
